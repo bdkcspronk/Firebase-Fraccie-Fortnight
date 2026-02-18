@@ -71,6 +71,60 @@ export default function HomePage() {
       .sort((left, right) => left.distance - right.distance);
   }, [bars, position]);
 
+  const winnerTeam = useMemo(() => {
+    if (!game.winner_team_id) return null;
+    return teams[game.winner_team_id] ?? null;
+  }, [game.winner_team_id, teams]);
+
+  const winnerMembers = useMemo(() => {
+    if (!winnerTeam) return [] as Array<{ uid: string; name: string }>;
+
+    const profiles = winnerTeam.memberProfiles ?? {};
+    const memberIds = new Set<string>([
+      ...Object.keys(winnerTeam.members ?? {}),
+      ...Object.keys(profiles)
+    ]);
+
+    return Array.from(memberIds)
+      .map((memberUid) => ({
+        uid: memberUid,
+        name: profiles[memberUid]?.name?.trim() || `Player-${memberUid.slice(0, 4)}`
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [winnerTeam]);
+
+  const finalPlayerScoreboard = useMemo(() => {
+    return Object.entries(teams)
+      .flatMap(([entryTeamId, entryTeam]) => {
+        if (!entryTeam || typeof entryTeam !== "object") return [];
+
+        const profiles = entryTeam.memberProfiles ?? {};
+        const memberIds = new Set<string>([
+          ...Object.keys(entryTeam.members ?? {}),
+          ...Object.keys(profiles)
+        ]);
+
+        const teamName = typeof entryTeam.name === "string" && entryTeam.name.trim()
+          ? entryTeam.name
+          : `Team-${entryTeamId.slice(0, 4)}`;
+        const wins = Number.isFinite(entryTeam.wins) ? entryTeam.wins : 0;
+        const losses = Number.isFinite(entryTeam.losses) ? entryTeam.losses : 0;
+
+        return Array.from(memberIds).map((memberUid) => ({
+          uid: memberUid,
+          playerName: profiles[memberUid]?.name?.trim() || `Player-${memberUid.slice(0, 4)}`,
+          teamName,
+          wins,
+          losses
+        }));
+      })
+      .sort((left, right) => {
+        if (right.wins !== left.wins) return right.wins - left.wins;
+        if (left.losses !== right.losses) return left.losses - right.losses;
+        return left.playerName.localeCompare(right.playerName);
+      });
+  }, [teams]);
+
   useEffect(() => {
     setNameInput(playerName);
   }, [playerName]);
@@ -116,7 +170,7 @@ export default function HomePage() {
       await update(ref(db, `bars/${barId}`), {
         active: false,
         clearedAt: Date.now(),
-        clearedBy: uid ?? teamId ?? "unknown"
+        clearedBy: teamId
       });
       setBarMessage("Bar marked inactive.");
     } catch (error) {
@@ -364,7 +418,56 @@ export default function HomePage() {
       </section>
 
       {game.status === "finished" ? (
-        <div className="absolute inset-0 grid place-items-center bg-black/70 text-2xl">Winner: {game.winner_team_id}</div>
+        <div className="absolute inset-0 bg-black/75 p-4">
+          <div className="mx-auto flex h-full max-w-3xl items-center justify-center">
+            <div className="w-full rounded-xl border border-slate-700 bg-slate-900/95 p-5 text-slate-100 shadow-2xl">
+              <h2 className="text-center text-2xl font-bold">Chickens found 🐔</h2>
+              <p className="mt-1 text-center text-lg">
+                Winner: {winnerTeam?.name ?? (game.winner_team_id ? `Team-${game.winner_team_id.slice(0, 4)}` : "Unknown team")}
+              </p>
+              {winnerTeam ? <p className="mt-1 text-center text-sm text-slate-300">{winnerTeam.wins}W-{winnerTeam.losses}L</p> : null}
+
+              <div className="mt-5">
+                <div className="mb-2 text-sm font-semibold">Winning team members</div>
+                {winnerMembers.length === 0 ? (
+                  <div className="text-xs text-slate-400">No member names available.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {winnerMembers.map((member) => (
+                      <span key={member.uid} className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-100">
+                        {member.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-2 text-sm font-semibold">Final player scoreboard</div>
+                <div className="max-h-64 overflow-auto rounded border border-slate-700">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-800/80 text-slate-200">
+                      <tr>
+                        <th className="px-2 py-2">Player</th>
+                        <th className="px-2 py-2">Team</th>
+                        <th className="px-2 py-2">Final score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finalPlayerScoreboard.map((row) => (
+                        <tr key={row.uid} className="border-t border-slate-800/70">
+                          <td className="px-2 py-1.5">{row.playerName}</td>
+                          <td className="px-2 py-1.5 text-slate-300">{row.teamName}</td>
+                          <td className="px-2 py-1.5 font-medium">{row.wins}W-{row.losses}L</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </main>
   );

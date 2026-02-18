@@ -35,13 +35,13 @@
       "$bar_id": {
         ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
         "active": {
-          ".write": "auth != null"
+          ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || (newData.parent().child('clearedBy').isString() && root.child('teams').child(newData.parent().child('clearedBy').val()).child('members').child(auth.uid).val() === true))"
         },
         "clearedAt": {
-          ".write": "auth != null"
+          ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || (newData.parent().child('clearedBy').isString() && root.child('teams').child(newData.parent().child('clearedBy').val()).child('members').child(auth.uid).val() === true))"
         },
         "clearedBy": {
-          ".write": "auth != null"
+          ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || (newData.isString() && root.child('teams').child(newData.val()).child('members').child(auth.uid).val() === true))"
         }
       }
     },

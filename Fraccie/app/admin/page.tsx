@@ -389,20 +389,6 @@ export default function AdminPage() {
       <div>Radius: {Math.round(game.circle_radius)}m</div>
       <div>Enemy popup visibility: {game.enemy_visibility ? "On" : "Off"}</div>
 
-      <section className="rounded border border-slate-700 p-3">
-        <h2 className="mb-2 font-semibold">Live Map</h2>
-        <div className="h-80 overflow-hidden rounded border border-slate-800">
-          <GameMap
-            position={{ lat: game.circle_center_lat, lng: game.circle_center_lng }}
-            teams={teams}
-            bars={bars}
-            game={game}
-            enabled
-            interactive
-          />
-        </div>
-      </section>
-
       <div className="flex flex-wrap gap-2">
         <button className="rounded bg-green-700 px-3 py-2" onClick={() => adminStartGame()}>Start game</button>
         <button className="rounded bg-amber-700 px-3 py-2" onClick={() => adminEndGame()}>End game</button>
@@ -567,6 +553,20 @@ export default function AdminPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded border border-slate-700 p-3">
+        <h2 className="mb-2 font-semibold">Live Map</h2>
+        <div className="h-96 overflow-hidden rounded border border-slate-800">
+          <GameMap
+            position={{ lat: game.circle_center_lat, lng: game.circle_center_lng }}
+            teams={teams}
+            bars={bars}
+            game={game}
+            enabled
+            interactive
+          />
         </div>
       </section>
     </main>
