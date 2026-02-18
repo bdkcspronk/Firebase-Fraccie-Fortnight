@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { push, ref, runTransaction, set, update } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { BATTLE_DISTANCE_METERS, BATTLE_TIMEOUT_MS } from "@/lib/constants";
@@ -93,7 +93,7 @@ export function useBattleLogic(
     }
   };
 
-  const autoCancelExpiredBattles = async () => {
+  const autoCancelExpiredBattles = useCallback(async () => {
     // Require authentication - either as a team member or admin
     if (!myTeamId && !isAdmin) return;
     
@@ -107,7 +107,7 @@ export function useBattleLogic(
         )
         .map(([battleId]) => update(ref(db, `battles/${battleId}`), { status: "cancelled" }))
     );
-  };
+  }, [myTeamId, isAdmin, battles]);
 
   return {
     availableTeamIds,

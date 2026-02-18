@@ -24,7 +24,7 @@ export default function HomePage() {
 
   useEffect(() => {
     void battle.autoCancelExpiredBattles();
-  }, [battle.autoCancelExpiredBattles, battles]);
+  }, [battle.autoCancelExpiredBattles]);
 
   const myPendingBattles = useMemo(
     () =>
