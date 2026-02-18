@@ -12,7 +12,7 @@ import { db } from "@/lib/firebase";
 import { Bar, Battle, Team } from "@/lib/types";
 
 export default function HomePage() {
-  const { teamId, team, loading } = useAuthTeam();
+  const { teamId, team, loading, isAdmin } = useAuthTeam();
   const game = useGameState();
   const teams = useRealtimeCollection<Team>("teams");
   const bars = useRealtimeCollection<Bar>("bars");
@@ -23,8 +23,9 @@ export default function HomePage() {
   const battle = useBattleLogic(teamId, teams, bars, battles);
 
   useEffect(() => {
+    if (!isAdmin) return;
     void battle.autoCancelExpiredBattles();
-  }, [battles]);
+  }, [battles, isAdmin]);
 
   const myPendingBattles = useMemo(
     () =>

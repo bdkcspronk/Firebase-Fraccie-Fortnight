@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { get, push, ref, runTransaction, set, update } from "firebase/database";
+import { push, ref, runTransaction, set, update } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { BATTLE_DISTANCE_METERS, BATTLE_TIMEOUT_MS } from "@/lib/constants";
 import { Battle, Bar, Team, BattleType } from "@/lib/types";
@@ -63,22 +63,26 @@ export function useBattleLogic(
 
   const confirmBattle = async (battleId: string) => {
     const battleRef = ref(db, `battles/${battleId}`);
-    const snap = await get(battleRef);
-    const battle = snap.val() as Battle;
-    if (!battle?.winner || battle.confirmed) return;
-
-    await runTransaction(ref(db, `teams/${battle.winner}`), (team) => {
-      if (!team) return team;
-      return { ...team, wins: (team.wins ?? 0) + 1 };
+    const result = await runTransaction(battleRef, (battle) => {
+      if (!battle?.winner || battle.confirmed) return;
+      return { ...battle, confirmed: true };
     });
+    if (!result.committed) return;
 
-    const loser = battle.winner === battle.team_a ? battle.team_b : battle.team_a;
-    await runTransaction(ref(db, `teams/${loser}`), (team) => {
+    const battle = result.snapshot.val() as Battle;
+    if (!myTeamId || !battle?.winner) return;
+
+    const isParticipant = myTeamId === battle.team_a || myTeamId === battle.team_b;
+    if (!isParticipant) return;
+
+    const isWinner = myTeamId === battle.winner;
+    await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
       if (!team) return team;
+      if (isWinner) {
+        return { ...team, wins: (team.wins ?? 0) + 1 };
+      }
       return { ...team, losses: (team.losses ?? 0) + 1 };
     });
-
-    await update(battleRef, { confirmed: true });
   };
 
   const autoCancelExpiredBattles = async () => {

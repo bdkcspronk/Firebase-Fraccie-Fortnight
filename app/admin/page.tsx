@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { ref, update } from "firebase/database";
 import { useAuthTeam } from "@/hooks/useAuthTeam";
 import { useGameState } from "@/hooks/useGameState";
@@ -14,23 +13,15 @@ export default function AdminPage() {
   const game = useGameState();
   const teams = useRealtimeCollection<Team>("teams");
   const battles = useRealtimeCollection<Battle>("battles");
-  const [password, setPassword] = useState("");
-  const passOk = password === (process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "") || isAdmin;
 
   if (!uid) return <main className="p-4">Loading...</main>;
 
-  if (!passOk) {
+  if (!isAdmin) {
     return (
-      <main className="grid h-screen place-items-center p-6">
+      <main className="grid h-screen place-items-center p-6 text-center">
         <div className="w-full max-w-sm rounded bg-slate-900 p-4">
           <h1 className="mb-2 text-xl">Admin Access</h1>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded bg-slate-800 p-2"
-            placeholder="Admin password"
-          />
+          <p className="text-slate-300">Your account is not marked as an admin in the database.</p>
         </div>
       </main>
     );
@@ -57,7 +48,12 @@ export default function AdminPage() {
               <span>{team.name} ({teamId.slice(0, 6)})</span>
               <button
                 className="rounded bg-slate-700 px-2"
-                onClick={() => update(ref(db, `teams/${teamId}`), { wins: 0, losses: 0 })}
+                onClick={() =>
+                  update(ref(db), {
+                    [`teams/${teamId}/wins`]: 0,
+                    [`teams/${teamId}/losses`]: 0
+                  })
+                }
               >
                 Reset W/L
               </button>
