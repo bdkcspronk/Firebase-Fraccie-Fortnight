@@ -1,0 +1,8 @@
+{
+  "hosting": {
+    "source": "Fraccie"
+  },
+  "database": {
+    "rules": "Fraccie/database.rules.json"
+  }
+}

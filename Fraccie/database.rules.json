@@ -1,0 +1,56 @@
+{
+  "rules": {
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+      }
+    },
+    "teams": {
+      ".read": "auth != null",
+      "$team_id": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || data.child('members').child(auth.uid).val() === true || (!data.exists() && newData.child('members').child(auth.uid).val() === true))",
+        "wins": { ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teams').child($team_id).child('members').child(auth.uid).val() === true)" },
+        "losses": { ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teams').child($team_id).child('members').child(auth.uid).val() === true)" },
+        "members": {
+          "$uid": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).val() === true || root.child('teams').child($team_id).child('members').child(auth.uid).val() === true)"
+          }
+        }
+      }
+    },
+    "teamCodes": {
+      ".read": "auth != null",
+      "$code": {
+        ".write": "auth != null"
+      }
+    },
+    "game": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "bars": {
+      ".read": "auth != null",
+      "$bar_id": {
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+        "active": {
+          ".write": "auth != null"
+        },
+        "clearedAt": {
+          ".write": "auth != null"
+        },
+        "clearedBy": {
+          ".write": "auth != null"
+        }
+      }
+    },
+    "battles": {
+      ".read": "auth != null",
+      "$battle_id": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || (data.exists() && (root.child('teams').child(data.child('team_a').val()).child('members').child(auth.uid).val() === true || root.child('teams').child(data.child('team_b').val()).child('members').child(auth.uid).val() === true)) || (!data.exists() && (root.child('teams').child(newData.child('team_a').val()).child('members').child(auth.uid).val() === true || root.child('teams').child(newData.child('team_b').val()).child('members').child(auth.uid).val() === true)))"
+      }
+    }
+  }
+}
