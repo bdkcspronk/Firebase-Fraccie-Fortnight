@@ -106,6 +106,13 @@ export function GameMap({ position, teams, bars, game, enabled }: GameMapProps) 
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
 
+    const activeIds = new Set(Object.keys(teams));
+    Object.entries(markersRef.current).forEach(([id, marker]) => {
+      if (activeIds.has(id)) return;
+      marker.remove();
+      delete markersRef.current[id];
+    });
+
     Object.entries(teams).forEach(([id, team]) => {
       const existing = markersRef.current[id];
       if (existing) {

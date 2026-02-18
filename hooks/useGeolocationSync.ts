@@ -32,13 +32,21 @@ export function useGeolocationSync(teamId: string | null, enabled: boolean) {
         const timeElapsed = now - lastWriteTsRef.current >= LOCATION_WRITE_INTERVAL_MS;
 
         if (movedEnough && timeElapsed) {
-          await update(ref(db, `teams/${teamId}`), {
-            lat: current.lat,
-            lng: current.lng,
-            lastUpdate: now
-          });
-          lastWrittenRef.current = current;
-          lastWriteTsRef.current = now;
+          try {
+            await update(ref(db, `teams/${teamId}`), {
+              lat: current.lat,
+              lng: current.lng,
+              lastUpdate: now
+            });
+            lastWrittenRef.current = current;
+            lastWriteTsRef.current = now;
+          } catch (err: unknown) {
+            const message =
+              err && typeof err === "object" && "message" in err
+                ? String((err as { message: unknown }).message)
+                : "Failed to update location";
+            setGeoError(message);
+          }
         }
       },
       (err) => setGeoError(err.message),

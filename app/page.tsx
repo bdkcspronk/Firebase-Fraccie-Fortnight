@@ -12,7 +12,7 @@ import { db } from "@/lib/firebase";
 import { Bar, Battle, Team } from "@/lib/types";
 
 export default function HomePage() {
-  const { teamId, team, loading } = useAuthTeam();
+  const { teamId, team, loading, isAdmin } = useAuthTeam();
   const game = useGameState();
   const teams = useRealtimeCollection<Team>("teams");
   const bars = useRealtimeCollection<Bar>("bars");
@@ -20,11 +20,11 @@ export default function HomePage() {
   const { position, geoError } = useGeolocationSync(teamId, game.status === "running");
   const [codeInput, setCodeInput] = useState("");
 
-  const battle = useBattleLogic(teamId, teams, bars, battles);
+  const battle = useBattleLogic(teamId, teams, bars, battles, isAdmin);
 
   useEffect(() => {
     void battle.autoCancelExpiredBattles();
-  }, [battles]);
+  }, [battle.autoCancelExpiredBattles]);
 
   const myPendingBattles = useMemo(
     () =>

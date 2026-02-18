@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { get, push, ref, runTransaction, set, update } from "firebase/database";
+import { useCallback, useMemo } from "react";
+import { push, ref, runTransaction, set, update } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { BATTLE_DISTANCE_METERS, BATTLE_TIMEOUT_MS } from "@/lib/constants";
 import { Battle, Bar, Team, BattleType } from "@/lib/types";
@@ -11,7 +11,8 @@ export function useBattleLogic(
   myTeamId: string | null,
   teams: Record<string, Team>,
   bars: Record<string, Bar>,
-  battles: Record<string, Battle>
+  battles: Record<string, Battle>,
+  isAdmin: boolean
 ) {
   const availableTeamIds = useMemo(() => {
     if (!myTeamId || !teams[myTeamId]) return [];
@@ -59,36 +60,54 @@ export function useBattleLogic(
 
   const submitWinner = async (battleId: string, winnerTeamId: string) => {
     await update(ref(db, `battles/${battleId}`), { winner: winnerTeamId, status: "submitted" });
+    
+    // Update winner's stats immediately
+    if (myTeamId === winnerTeamId) {
+      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
+        if (!team) return team;
+        return { ...team, wins: (team.wins ?? 0) + 1 };
+      });
+    }
   };
 
   const confirmBattle = async (battleId: string) => {
     const battleRef = ref(db, `battles/${battleId}`);
-    const snap = await get(battleRef);
-    const battle = snap.val() as Battle;
-    if (!battle?.winner || battle.confirmed) return;
-
-    await runTransaction(ref(db, `teams/${battle.winner}`), (team) => {
-      if (!team) return team;
-      return { ...team, wins: (team.wins ?? 0) + 1 };
+    const result = await runTransaction(battleRef, (battle) => {
+      if (!battle?.winner || battle.confirmed) return;
+      return { ...battle, confirmed: true };
     });
+    if (!result.committed) return;
 
-    const loser = battle.winner === battle.team_a ? battle.team_b : battle.team_a;
-    await runTransaction(ref(db, `teams/${loser}`), (team) => {
-      if (!team) return team;
-      return { ...team, losses: (team.losses ?? 0) + 1 };
-    });
+    const battle = result.snapshot.val() as Battle;
+    if (!myTeamId || !battle?.winner) return;
 
-    await update(battleRef, { confirmed: true });
+    const isParticipant = myTeamId === battle.team_a || myTeamId === battle.team_b;
+    if (!isParticipant) return;
+
+    // Update confirming team's losses (winner already updated their wins in submitWinner)
+    if (myTeamId !== battle.winner) {
+      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
+        if (!team) return team;
+        return { ...team, losses: (team.losses ?? 0) + 1 };
+      });
+    }
   };
 
-  const autoCancelExpiredBattles = async () => {
+  const autoCancelExpiredBattles = useCallback(async () => {
+    // Require authentication - either as a team member or admin
+    if (!myTeamId && !isAdmin) return;
+    
     const now = Date.now();
     await Promise.all(
       Object.entries(battles)
-        .filter(([, battle]) => !battle.confirmed && now - battle.createdAt > BATTLE_TIMEOUT_MS)
+        .filter(([, battle]) => 
+          !battle.confirmed && 
+          now - battle.createdAt > BATTLE_TIMEOUT_MS &&
+          (battle.team_a === myTeamId || battle.team_b === myTeamId || isAdmin)
+        )
         .map(([battleId]) => update(ref(db, `battles/${battleId}`), { status: "cancelled" }))
     );
-  };
+  }, [myTeamId, isAdmin, battles]);
 
   return {
     availableTeamIds,

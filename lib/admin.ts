@@ -27,6 +27,6 @@ export const adminResetGame = async () => {
 export const adminOverrideBattle = async (battleId: string, winner: string | null) =>
   update(ref(db, `battles/${battleId}`), {
     winner,
-    confirmed: Boolean(winner),
+    confirmed: false,
     status: winner ? "submitted" : "cancelled"
   });
