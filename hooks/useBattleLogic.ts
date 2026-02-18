@@ -94,7 +94,7 @@ export function useBattleLogic(
   };
 
   const autoCancelExpiredBattles = async () => {
-    if (!myTeamId && !isAdmin) return;
+    if (!myTeamId) return;
     const now = Date.now();
     await Promise.all(
       Object.entries(battles)
