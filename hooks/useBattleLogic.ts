@@ -11,7 +11,8 @@ export function useBattleLogic(
   myTeamId: string | null,
   teams: Record<string, Team>,
   bars: Record<string, Bar>,
-  battles: Record<string, Battle>
+  battles: Record<string, Battle>,
+  isAdmin: boolean
 ) {
   const availableTeamIds = useMemo(() => {
     if (!myTeamId || !teams[myTeamId]) return [];
@@ -96,7 +97,11 @@ export function useBattleLogic(
     const now = Date.now();
     await Promise.all(
       Object.entries(battles)
-        .filter(([, battle]) => !battle.confirmed && now - battle.createdAt > BATTLE_TIMEOUT_MS)
+        .filter(([, battle]) => 
+          !battle.confirmed && 
+          now - battle.createdAt > BATTLE_TIMEOUT_MS &&
+          (battle.team_a === myTeamId || battle.team_b === myTeamId || isAdmin)
+        )
         .map(([battleId]) => update(ref(db, `battles/${battleId}`), { status: "cancelled" }))
     );
   };

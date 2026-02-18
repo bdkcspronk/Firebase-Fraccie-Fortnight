@@ -20,12 +20,11 @@ export default function HomePage() {
   const { position, geoError } = useGeolocationSync(teamId, game.status === "running");
   const [codeInput, setCodeInput] = useState("");
 
-  const battle = useBattleLogic(teamId, teams, bars, battles);
+  const battle = useBattleLogic(teamId, teams, bars, battles, isAdmin);
 
   useEffect(() => {
-    if (!isAdmin) return;
     void battle.autoCancelExpiredBattles();
-  }, [battle, isAdmin]);
+  }, [battle]);
 
   const myPendingBattles = useMemo(
     () =>
