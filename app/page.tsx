@@ -25,7 +25,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!isAdmin) return;
     void battle.autoCancelExpiredBattles();
-  }, [battles, isAdmin]);
+  }, [battle, isAdmin]);
 
   const myPendingBattles = useMemo(
     () =>

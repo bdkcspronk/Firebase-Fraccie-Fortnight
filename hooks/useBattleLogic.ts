@@ -59,6 +59,14 @@ export function useBattleLogic(
 
   const submitWinner = async (battleId: string, winnerTeamId: string) => {
     await update(ref(db, `battles/${battleId}`), { winner: winnerTeamId, status: "submitted" });
+    
+    // Update winner's stats immediately
+    if (myTeamId === winnerTeamId) {
+      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
+        if (!team) return team;
+        return { ...team, wins: (team.wins ?? 0) + 1 };
+      });
+    }
   };
 
   const confirmBattle = async (battleId: string) => {
@@ -75,14 +83,13 @@ export function useBattleLogic(
     const isParticipant = myTeamId === battle.team_a || myTeamId === battle.team_b;
     if (!isParticipant) return;
 
-    const isWinner = myTeamId === battle.winner;
-    await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
-      if (!team) return team;
-      if (isWinner) {
-        return { ...team, wins: (team.wins ?? 0) + 1 };
-      }
-      return { ...team, losses: (team.losses ?? 0) + 1 };
-    });
+    // Update confirming team's losses (winner already updated their wins in submitWinner)
+    if (myTeamId !== battle.winner) {
+      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
+        if (!team) return team;
+        return { ...team, losses: (team.losses ?? 0) + 1 };
+      });
+    }
   };
 
   const autoCancelExpiredBattles = async () => {
