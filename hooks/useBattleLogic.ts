@@ -66,7 +66,7 @@ export function useBattleLogic(
       if (!battle) return battle;
 
       // If a winner has already been submitted or the battle is confirmed, do nothing.
-      if (battle.winner || battle.status === "submitted" || battle.confirmed) {
+      if (battle.winner || battle.confirmed) {
         return battle;
       }
 
