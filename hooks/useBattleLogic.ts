@@ -60,7 +60,7 @@ export function useBattleLogic(
 
   const submitWinner = async (battleId: string, winnerTeamId: string) => {
     const battleRef = ref(db, `battles/${battleId}`);
-    let shouldIncrementWin = false;
+    let winnerWasSet = false;
 
     const result = await runTransaction(battleRef, (battle) => {
       if (!battle) return battle;
@@ -71,12 +71,12 @@ export function useBattleLogic(
       }
 
       // First submission: set winner and mark as submitted.
-      shouldIncrementWin = true;
+      winnerWasSet = true;
       return { ...battle, winner: winnerTeamId, status: "submitted" };
     });
 
     // Only increment wins if this transaction actually set the winner.
-    if (!result.committed || !shouldIncrementWin) {
+    if (!result.committed || !winnerWasSet) {
       return;
     }
 
