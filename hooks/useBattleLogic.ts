@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { push, ref, runTransaction, set, update } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { BATTLE_DISTANCE_METERS, BATTLE_TIMEOUT_MS } from "@/lib/constants";
@@ -11,7 +11,8 @@ export function useBattleLogic(
   myTeamId: string | null,
   teams: Record<string, Team>,
   bars: Record<string, Bar>,
-  battles: Record<string, Battle>
+  battles: Record<string, Battle>,
+  isAdmin: boolean
 ) {
   const availableTeamIds = useMemo(() => {
     if (!myTeamId || !teams[myTeamId]) return [];
@@ -59,6 +60,14 @@ export function useBattleLogic(
 
   const submitWinner = async (battleId: string, winnerTeamId: string) => {
     await update(ref(db, `battles/${battleId}`), { winner: winnerTeamId, status: "submitted" });
+    
+    // Update winner's stats immediately
+    if (myTeamId === winnerTeamId) {
+      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
+        if (!team) return team;
+        return { ...team, wins: (team.wins ?? 0) + 1 };
+      });
+    }
   };
 
   const confirmBattle = async (battleId: string) => {
@@ -75,24 +84,30 @@ export function useBattleLogic(
     const isParticipant = myTeamId === battle.team_a || myTeamId === battle.team_b;
     if (!isParticipant) return;
 
-    const isWinner = myTeamId === battle.winner;
-    await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
-      if (!team) return team;
-      if (isWinner) {
-        return { ...team, wins: (team.wins ?? 0) + 1 };
-      }
-      return { ...team, losses: (team.losses ?? 0) + 1 };
-    });
+    // Update confirming team's losses (winner already updated their wins in submitWinner)
+    if (myTeamId !== battle.winner) {
+      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
+        if (!team) return team;
+        return { ...team, losses: (team.losses ?? 0) + 1 };
+      });
+    }
   };
 
-  const autoCancelExpiredBattles = async () => {
+  const autoCancelExpiredBattles = useCallback(async () => {
+    // Require authentication - either as a team member or admin
+    if (!myTeamId && !isAdmin) return;
+    
     const now = Date.now();
     await Promise.all(
       Object.entries(battles)
-        .filter(([, battle]) => !battle.confirmed && now - battle.createdAt > BATTLE_TIMEOUT_MS)
+        .filter(([, battle]) => 
+          !battle.confirmed && 
+          now - battle.createdAt > BATTLE_TIMEOUT_MS &&
+          (battle.team_a === myTeamId || battle.team_b === myTeamId || isAdmin)
+        )
         .map(([battleId]) => update(ref(db, `battles/${battleId}`), { status: "cancelled" }))
     );
-  };
+  }, [myTeamId, isAdmin, battles]);
 
   return {
     availableTeamIds,
