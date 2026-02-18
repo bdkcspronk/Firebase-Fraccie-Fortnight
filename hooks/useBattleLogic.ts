@@ -59,15 +59,31 @@ export function useBattleLogic(
   };
 
   const submitWinner = async (battleId: string, winnerTeamId: string) => {
-    await update(ref(db, `battles/${battleId}`), { winner: winnerTeamId, status: "submitted" });
-    
-    // Update winner's stats immediately
-    if (myTeamId === winnerTeamId) {
-      await runTransaction(ref(db, `teams/${myTeamId}`), (team) => {
-        if (!team) return team;
-        return { ...team, wins: (team.wins ?? 0) + 1 };
-      });
+    const battleRef = ref(db, `battles/${battleId}`);
+    let shouldIncrementWin = false;
+
+    const result = await runTransaction(battleRef, (battle) => {
+      if (!battle) return battle;
+
+      // If a winner has already been submitted or the battle is confirmed, do nothing.
+      if (battle.winner || battle.status === "submitted" || battle.confirmed) {
+        return battle;
+      }
+
+      // First submission: set winner and mark as submitted.
+      shouldIncrementWin = true;
+      return { ...battle, winner: winnerTeamId, status: "submitted" };
+    });
+
+    // Only increment wins if this transaction actually set the winner.
+    if (!result.committed || !shouldIncrementWin) {
+      return;
     }
+
+    await runTransaction(ref(db, `teams/${winnerTeamId}`), (team) => {
+      if (!team) return team;
+      return { ...team, wins: (team.wins ?? 0) + 1 };
+    });
   };
 
   const confirmBattle = async (battleId: string) => {
