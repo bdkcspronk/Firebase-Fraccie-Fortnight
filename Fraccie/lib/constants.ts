@@ -5,5 +5,5 @@ export const LOCATION_WRITE_INTERVAL_MS = 8_000;
 export const LOCATION_MIN_DISTANCE_METERS = 10;
 export const BATTLE_DISTANCE_METERS = 40;
 export const BATTLE_TIMEOUT_MS = 2 * 60_000;
-export const BATTLE_COOLDOWN_MS = 10 * 60_000;
+export const BATTLE_COOLDOWN_MS = 2 * 60_000;
 export const MAP_DEFAULT_ZOOM = 15;

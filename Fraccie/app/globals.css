@@ -1,7 +1,11 @@
+/* Non-selectable header for team name and stats */
+.team-header {
+  user-select: none;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
+/* ...existing code... */
 html,
 body,
 :root {
@@ -9,6 +13,36 @@ body,
   padding: 0;
   width: 100%;
   height: 100%;
-  background: #020617;
-  color: #e2e8f0;
+  /* Global color variables */
+  --color-background: #020617;
+  --color-text-primary: #e2e8f0;
+  --color-primary: #6366f1;
+  --color-emerald: #10b981;
+  --color-amber: #f59e42;
+  --color-rose: #e11d48;
+  --color-slate: #334155;
+  --color-btn: #2563eb;
+  --color-success: #10b981;
+  --color-error: #e11d48;
+  --color-warning: #facc15;
+  --color-found-chickens: #facc15;
+  background: var(--color-background);
+
+/* Danger texture for the "Found the chickens!" button */
+.found-chickens-btn {
+  position: relative;
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-found-chickens) 0,
+    var(--color-found-chickens) 20px,
+    var(--color-background) 20px,
+    var(--color-background) 40px
+  );
+  color: var(--color-text-primary);
+  user-select: none;
+  border: 2px solid var(--color-background);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+  text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.533);
+}
+  color: var(--color-text-primary);
 }

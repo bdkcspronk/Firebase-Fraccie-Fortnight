@@ -45,6 +45,36 @@ export default function AdminPage() {
   const [barsInput, setBarsInput] = useState("");
   const [barsPending, setBarsPending] = useState(false);
   const [barsMessage, setBarsMessage] = useState<string | null>(null);
+  const [globalBarRadius, setGlobalBarRadius] = useState("");
+  const [globalBarRadiusPending, setGlobalBarRadiusPending] = useState(false);
+  const [globalBarRadiusMessage, setGlobalBarRadiusMessage] = useState<string | null>(null);
+    const deleteBar = async (barId: string) => {
+      if (!confirm("Delete this bar? This will permanently remove it from the database.")) return;
+      await set(ref(db, `bars/${barId}`), null);
+    };
+
+    const updateAllBarRadius = async () => {
+      const radius = Number(globalBarRadius);
+      if (!Number.isFinite(radius) || radius < 1) {
+        setGlobalBarRadiusMessage("Enter a valid radius of at least 1m.");
+        return;
+      }
+      setGlobalBarRadiusPending(true);
+      setGlobalBarRadiusMessage(null);
+      try {
+        const updates: Record<string, number> = {};
+        for (const [barId] of barRows) {
+          updates[`bars/${barId}/radius`] = radius;
+        }
+        await update(ref(db), updates);
+        setGlobalBarRadiusMessage("Updated radius for all bars.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to update bar radii.";
+        setGlobalBarRadiusMessage(message);
+      } finally {
+        setGlobalBarRadiusPending(false);
+      }
+    };
   const [uidCopyMessage, setUidCopyMessage] = useState<string | null>(null);
   const [enemyVisibilityPending, setEnemyVisibilityPending] = useState(false);
 
@@ -222,8 +252,8 @@ export default function AdminPage() {
   const setCircleRadius = async () => {
     const radius = Number(radiusInput);
 
-    if (!Number.isFinite(radius) || radius < 20) {
-      setRadiusMessage("Enter a valid radius of at least 20m.");
+    if (!Number.isFinite(radius) || radius < 1) {
+      setRadiusMessage("Enter a valid radius of at least 1m.");
       return;
     }
 
@@ -472,24 +502,47 @@ export default function AdminPage() {
         </div>
         {barsMessage ? <div className="mt-2 text-xs text-slate-300">{barsMessage}</div> : null}
 
-        <div className="mt-3 space-y-1">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <input
+            value={globalBarRadius}
+            onChange={(e) => setGlobalBarRadius(e.target.value)}
+            className="rounded bg-slate-900 px-2 py-1"
+            placeholder="Set all bars radius (m)"
+            type="number"
+            min={20}
+          />
+          <button className="rounded bg-indigo-700 px-3 py-1" onClick={() => void updateAllBarRadius()} disabled={globalBarRadiusPending}>
+            {globalBarRadiusPending ? "Updating..." : "Set all bars radius"}
+          </button>
+          {globalBarRadiusMessage ? <span className="text-xs text-slate-300">{globalBarRadiusMessage}</span> : null}
+        </div>
+
+        <div className="mt-3 max-h-64 overflow-y-auto space-y-1">
           {barRows.map(([barId, bar]) => (
             <div key={barId} className="flex items-center justify-between rounded bg-slate-900 p-2 text-xs">
               <span>{bar.name} • r={Math.round(bar.radius)}m • {bar.lat.toFixed(5)}, {bar.lng.toFixed(5)}</span>
-              <button
-                className={`rounded px-2 py-1 ${bar.active === false ? "bg-emerald-700" : "bg-amber-700"}`}
-                onClick={() => void setBarActive(barId, bar.active === false)}
-              >
-                {bar.active === false ? "Set active" : "Set inactive"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className={`rounded px-2 py-1 ${bar.active === false ? "bg-emerald-700" : "bg-amber-700"}`}
+                  onClick={() => void setBarActive(barId, bar.active === false)}
+                >
+                  {bar.active === false ? "Set active" : "Set inactive"}
+                </button>
+                <button
+                  className="rounded bg-red-800 px-2 py-1"
+                  onClick={() => void deleteBar(barId)}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </section>
 
       <section className="rounded border border-slate-700 p-3">
+        <h2 className="mb-2 font-semibold">Teams</h2>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Teams</h2>
           <div className="flex flex-wrap gap-2">
             <button className="rounded bg-slate-700 px-3 py-1" onClick={() => void pruneInactiveTeams()} disabled={prunePending || deleteAllPending}>
               {prunePending ? "Pruning..." : "Prune inactive"}
@@ -499,8 +552,8 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+        <p className="mb-2 text-xs text-slate-400">Reset W/L resets a team's wins/losses score back to 0/0. Prune removes teams inactive for 10+ minutes (or with zero members).</p>
         {pruneMessage ? <div className="mb-2 text-xs text-slate-300">{pruneMessage}</div> : null}
-        <p className="mb-2 text-xs text-slate-400">Reset W/L resets a team’s wins/losses score back to 0/0. Prune removes teams inactive for 10+ minutes (or with zero members).</p>
         <div className="space-y-1">
           {teamRows.map(({ teamId, team, memberCount, memberNames, lastActiveAt, active, inactiveForDelete }) => (
             <div key={teamId} className="flex items-center justify-between gap-3 rounded bg-slate-900 p-2">

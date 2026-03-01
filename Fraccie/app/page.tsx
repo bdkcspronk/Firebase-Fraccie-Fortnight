@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { ref, update } from "firebase/database";
 import { GameMap } from "@/components/GameMap";
 import { useAuthTeam } from "@/hooks/useAuthTeam";
@@ -13,6 +14,43 @@ import { db } from "@/lib/firebase";
 import { distanceMeters } from "@/lib/geo";
 import { Bar, Battle, Team } from "@/lib/types";
 import logoImage from "./images/logo_300_300.png";
+import { TeamRanking } from "@/components/TeamRanking";
+import { ChallengeButtonsClient } from "./ChallengeButtonsClient";
+import { useBattleLossTimer } from "@/hooks/useBattleLossTimer";
+import { LossTimerOverlay } from "@/components/LossTimerOverlay";
+
+
+
+// Utility to darken a hex color
+function darkenColor(hex: string, amount = 0.25) {
+  if (!hex.startsWith('#')) return hex;
+  let r = parseInt(hex.slice(1, 3), 16);
+  let g = parseInt(hex.slice(3, 5), 16);
+  let b = parseInt(hex.slice(5, 7), 16);
+  r = Math.floor(r * (1 - amount));
+  g = Math.floor(g * (1 - amount));
+  b = Math.floor(b * (1 - amount));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Utility to clamp color brightness
+function clampColorBrightness(hex: string, maxValue = 0.8) {
+  if (!hex.startsWith('#')) return hex;
+  let r = parseInt(hex.slice(1, 3), 16) / 255;
+  let g = parseInt(hex.slice(3, 5), 16) / 255;
+  let b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  if (max > maxValue) {
+    const scale = maxValue / max;
+    r *= scale;
+    g *= scale;
+    b *= scale;
+  }
+  r = Math.floor(r * 255);
+  g = Math.floor(g * 255);
+  b = Math.floor(b * 255);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
 
 export default function HomePage() {
       // Listen for admin broadcast to delete all teams
@@ -50,7 +88,23 @@ export default function HomePage() {
   const [joinGamePending, setJoinGamePending] = useState(false);
   const [isReadyForGame, setIsReadyForGame] = useState(false);
   const previousStatusRef = useRef<string | null>(null);
+  const [showSecretCodeInput, setShowSecretCodeInput] = useState(false);
+  const [teamColorInput, setTeamColorInput] = useState(team?.color || '#38bdf8');
+  
+  useEffect(() => {
+    if (team?.color) setTeamColorInput(team.color);
+  }, [team?.color]);
 
+  // Use clamped color for UI backgrounds
+  const teamBgColor = team?.color ? darkenColor(clampColorBrightness(team.color, 0.8), 0.25) : '#1e293b';
+
+  const updateTeamColor = async (color: string) => {
+    if (!teamId) return;
+    const clamped = clampColorBrightness(color, 0.8);
+    setTeamColorInput(clamped);
+    await update(ref(db, `teams/${teamId}`), { color: clamped });
+  };
+  
   const battle = useBattleLogic(teamId, teams, bars, battles, isAdmin);
 
   useEffect(() => {
@@ -74,18 +128,37 @@ export default function HomePage() {
     }));
   }, [team]);
 
+  // Stable bar proximity logic
+  const [activeBarIds, setActiveBarIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!position) {
+      setActiveBarIds([]);
+      return;
+    }
+    const nowActive: string[] = [];
+    Object.entries(bars).forEach(([id, bar]) => {
+      const distance = distanceMeters(position.lat, position.lng, bar.lat, bar.lng);
+      const wasActive = activeBarIds.includes(id);
+      if (bar.active !== false) {
+        if (distance <= bar.radius) {
+          nowActive.push(id);
+        } else if (wasActive && distance <= bar.radius * 1.5) {
+          nowActive.push(id);
+        }
+      }
+    });
+    setActiveBarIds(nowActive);
+  }, [bars, position]);
+
   const nearbyActiveBars = useMemo(() => {
     if (!position) return [] as Array<{ id: string; bar: Bar; distance: number }>;
-
-    return Object.entries(bars)
-      .map(([id, bar]) => ({
-        id,
-        bar,
-        distance: distanceMeters(position.lat, position.lng, bar.lat, bar.lng)
-      }))
-      .filter(({ bar, distance }) => bar.active !== false && distance <= bar.radius)
-      .sort((left, right) => left.distance - right.distance);
-  }, [bars, position]);
+    return activeBarIds.map((id) => {
+      const bar = bars[id];
+      const distance = distanceMeters(position.lat, position.lng, bar.lat, bar.lng);
+      return { id, bar, distance };
+    }).sort((left, right) => left.distance - right.distance);
+  }, [activeBarIds, bars, position]);
 
   const winnerTeam = useMemo(() => {
     if (!game.winner_team_id) return null;
@@ -108,7 +181,7 @@ export default function HomePage() {
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [winnerTeam]);
-
+  
   const finalPlayerScoreboard = useMemo(() => {
     return Object.entries(teams)
       .flatMap(([entryTeamId, entryTeam]) => {
@@ -183,18 +256,54 @@ export default function HomePage() {
   const markBarInactive = async (barId: string) => {
     setBarMessage(null);
     try {
+      // Find teams with members near the bar
+      const bar = bars[barId];
+      if (!bar) throw new Error("Bar not found.");
+      const nearbyTeams: string[] = [];
+      Object.entries(teams).forEach(([tid, t]) => {
+        const memberLocs = t.memberLocations ?? {};
+        const isNear = Object.values(memberLocs).some(loc => {
+          const dist = distanceMeters(loc.lat, loc.lng, bar.lat, bar.lng);
+          return dist <= bar.radius;
+        });
+        if (isNear) nearbyTeams.push(tid);
+      });
+
+      // Only allow marking inactive if one team is near
+      if (nearbyTeams.length > 1) {
+        setBarMessage("Multiple teams are near this bar. You must challenge first.");
+        return;
+      }
+
       await update(ref(db, `bars/${barId}`), {
         active: false,
         clearedAt: Date.now(),
         clearedBy: teamId
       });
-      setBarMessage("Bar marked inactive.");
+
+      // Increment team's wins
+      if (teamId) {
+        const currentWins = teams[teamId]?.wins ?? 0;
+        await update(ref(db, `teams/${teamId}`), {
+          wins: currentWins + 1
+        });
+      }
+
+      setBarMessage("Bar marked searched.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to mark bar inactive.";
+      const message = error instanceof Error ? error.message : "Failed to mark bar searched.";
       setBarMessage(message);
     }
   };
 
+  // Top-of-screen action popups for in-game actions
+  const canMarkBarInactive = nearbyActiveBars.length > 0;
+  const canChallengeTeam = battle.availableTeamIds.length > 0;
+  const challengeTeamId = canChallengeTeam ? battle.availableTeamIds[0] : null;
+  const challengeTeamName = challengeTeamId ? (teams[challengeTeamId]?.name ?? challengeTeamId.slice(0, 4)) : "";
+  const safeTeamId = teamId ?? "";
+  const lossTimerMs = useBattleLossTimer(battles, safeTeamId);
+  
   if (loading) return <main className="p-4">Loading...</main>;
 
   // Location permission banner
@@ -275,169 +384,301 @@ export default function HomePage() {
       );
     };
 
+    const waitingBgColor = team?.color ? darkenColor(clampColorBrightness(team.color, 0.8), 0.35) : '#1e293b';
+    const waitingPanelColor = team?.color ? darkenColor(clampColorBrightness(team.color, 0.8), 0.5) : '#0f172a';
+    // Get other teams (exclude current team)
+    const otherTeams = Object.entries(teams).filter(([tid]) => tid !== teamId);
+    const inputBgColor = team?.color ? darkenColor(clampColorBrightness(team.color, 0.8), 0.7) : '#0a101a';
+    const memberBgColor = team?.color ? darkenColor(clampColorBrightness(team.color, 0.8), 0.5) : '#1e293b';
     return (
-      <main className="grid min-h-screen place-items-center p-6 text-center">
-        <div className="w-full max-w-xl rounded bg-slate-900 p-5 text-slate-100">
-          <div className="mb-4 flex justify-center">
-            <img src={logoImage.src} alt="Fraccie logo" className="h-24 w-24" />
-          </div>
-          <h1 className="mb-2 text-xl">Waiting for game start…</h1>
-          <p className="mb-1 text-slate-300">Current team: {team.name}</p>
-          <div className="mb-4 flex items-center justify-center gap-2 text-slate-300">
-          {/* Share code removed, code is always equal to team name */}
-          </div>
-
-          <div className="mx-auto flex max-w-sm gap-2">
-            <input
-              value={joinCodeInput}
-              onChange={(event) => setJoinCodeInput(event.target.value.toUpperCase())}
-              className="flex-1 rounded bg-slate-800 px-2 py-2"
-              placeholder="Enter team name"
-              maxLength={6}
-              disabled={teamActionPending}
-            />
-            <button
-              className="rounded bg-emerald-700 px-3"
-              onClick={() => void joinTeamByName(joinCodeInput)}
-              disabled={teamActionPending}
-            >
-              Join
-            </button>
-            {teamActionError ? <p className="mt-3 text-sm text-red-300">{teamActionError}</p> : null}
-          </div>
-
-          <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
-            <p className="mb-2 text-sm font-semibold">Your player name</p>
-            <div className="flex gap-2">
-              <input
-                value={nameInput}
-                onChange={(event) => setNameInput(event.target.value)}
-                className="flex-1 rounded bg-slate-800 px-2 py-2"
-                placeholder="Enter your name"
-                maxLength={24}
-                disabled={namePending}
-              />
-              <button className="rounded bg-slate-700 px-3" onClick={() => void saveName()} disabled={namePending}>
-                Save
-              </button>
+      <main className="grid min-h-screen place-items-center p-6 text-center" style={{ background: waitingBgColor }}>
+        <div className="w-full max-w-xl rounded" style={{ background: waitingPanelColor, color: 'var(--color-text-primary)' }}>
+          <div className="p-5 flex flex-col gap-6">
+            {/* Logo and game status */}
+            <div className="flex flex-col items-center gap-2">
+              <img src={logoImage.src} alt="Fraccie logo" className="h-24 w-24" />
+              <h1 className="text-xl">Waiting for The Game start…</h1>
             </div>
-            {nameError ? <p className="mt-2 text-xs text-red-300">{nameError}</p> : null}
-          </div>
 
-          <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
-            <p className="mb-2 text-sm font-semibold">Team name</p>
-            <div className="flex gap-2">
-              <input
-                value={teamNameInput}
-                onChange={(event) => setTeamNameInput(event.target.value)}
-                className="flex-1 rounded bg-slate-800 px-2 py-2"
-                placeholder="Enter team name"
-                maxLength={32}
-                disabled={teamNamePending}
-              />
-              <button className="rounded bg-slate-700 px-3" onClick={() => void saveTeamName()} disabled={teamNamePending}>
-                Save
-              </button>
-            </div>
-            {teamNameError ? <p className="mt-2 text-xs text-red-300">{teamNameError}</p> : null}
-          </div>
+            {/* Player section FIRST */}
+            <section className="rounded bg-black/20 p-4 text-left flex flex-col gap-3">
+              <div className="font-semibold text-lg mb-2">Your player name</div>
+              <div className="flex gap-2">
+                <input
+                  value={nameInput}
+                  onChange={(event) => setNameInput(event.target.value)}
+                  className="flex-1 rounded px-2 py-2"
+                  style={{ background: inputBgColor, color: 'var(--color-text-primary)' }}
+                  placeholder="Edit your name"
+                  maxLength={24}
+                  disabled={namePending}
+                />
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  className="rounded bg-slate-700 px-3"
+                  onClick={() => void saveName()}
+                  disabled={namePending}
+                >
+                  Save
+                </motion.button>
+              </div>
+              {nameError ? <p className="text-xs text-red-300">{nameError}</p> : null}
+            </section>
 
-          <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
-            <p className="mb-2 text-sm font-semibold">Team players ({team.name})</p>
-            <ul className="space-y-1 text-sm">
-              {teamPlayers.map((member) => (
-                <li key={member.uid} className="flex items-center justify-between rounded bg-slate-900 px-2 py-1">
-                  <span>{member.name}</span>
-                  <span className={member.active ? "text-emerald-300" : "text-slate-400"}>{member.active ? "active" : "inactive"}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+            {/* Team section */}
+            <section className="rounded bg-black/20 p-4 text-left flex flex-col gap-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-lg mb-2">Your team</span>
+                <span className="text-sm text-slate-400">Players {teamPlayers.length}</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={teamNameInput}
+                  onChange={(event) => setTeamNameInput(event.target.value)}
+                  className="flex-1 rounded px-2 py-2"
+                  style={{ background: inputBgColor, color: 'var(--color-text-primary)' }}
+                  placeholder="Edit team name"
+                  maxLength={32}
+                  disabled={teamNamePending}
+                />
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  className="rounded bg-slate-700 px-3"
+                  onClick={() => void saveTeamName()}
+                  disabled={teamNamePending}
+                >
+                  Save
+                </motion.button>
+              </div>
+              <div className="flex gap-2 items-center mb-2">
+                <span className="text-sm">Team color:</span>
+                <div className="flex-1" />
+                <input
+                  id="team-color-picker"
+                  type="color"
+                  value={teamColorInput}
+                  onChange={e => updateTeamColor(e.target.value)}
+                  className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer"
+                  style={{ background: 'none' }}
+                />
+              </div>
+              {teamNameError ? <p className="text-xs text-red-300">{teamNameError}</p> : null}
+              <div className="mt-2">
+                <p className="mb-1 text-sm font-semibold">Team {team?.name || (teamId ? `Team-${teamId.slice(0, 4)}` : "")} members:</p>
+                <ul className="space-y-1 text-sm">
+                  {teamPlayers.map((member) => (
+                    <li
+                      key={member.uid}
+                      className="flex items-center justify-between rounded px-2 py-1"
+                      style={{ background: memberBgColor }}
+                    >
+                      <span>{member.name}</span>
+                      <span className={member.active ? "text-emerald-300" : "text-slate-400"}>{member.active ? "active" : "inactive"}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
 
-          <div className="mt-5 border-t border-slate-700 pt-4">
-            <button
-              className="w-full rounded bg-emerald-700 px-3 py-2 font-medium"
-              onClick={() => void joinGameNow()}
-              disabled={isReadyForGame || joinGamePending || teamActionPending || namePending || teamNamePending}
-            >
-              {joinGamePending ? "Saving..." : game.status === "waiting" ? (isReadyForGame ? "Waiting to start" : "Ready for game") : "Join game"}
-            </button>
+            {/* Join another team section */}
+            <section className="rounded bg-black/20 p-4 text-left flex flex-col gap-3">
+              <p className="mb-1 text-sm font-semibold">Join another team</p>
+              <div className="flex gap-2">
+                <input
+                  value={joinCodeInput}
+                  onChange={(event) => setJoinCodeInput(event.target.value)}
+                  className="flex-1 rounded px-2 py-2"
+                  style={{ background: inputBgColor, color: 'var(--color-text-primary)' }}
+                  placeholder="Enter team name"
+                  maxLength={32}
+                  disabled={teamActionPending}
+                />
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  className="rounded bg-emerald-700 px-3"
+                  onClick={() => void joinTeamByName(joinCodeInput)}
+                  disabled={teamActionPending}
+                >
+                  Join
+                </motion.button>
+              </div>
+              {teamActionError ? <p className="text-xs text-red-300">{teamActionError}</p> : null}
+            </section>
+
+            {/* Ready for game section */}
+            <section className="mt-2">
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                className="w-full rounded bg-emerald-700 px-3 py-2 font-medium"
+                onClick={() => void joinGameNow()}
+                disabled={isReadyForGame || joinGamePending || teamActionPending || namePending || teamNamePending}
+              >
+                {joinGamePending ? "Saving..." : game.status === "waiting" ? (isReadyForGame ? "Waiting to start" : "Ready for game") : "Join game"}
+              </motion.button>
+            </section>
+
+            {/* Other teams section */}
+            {otherTeams.length > 0 && (
+              <section className="mt-4">
+                <div className="mb-2 text-sm font-semibold">Other teams</div>
+                <div className="flex flex-col gap-2">
+                  {otherTeams.map(([tid, t]) => (
+                    <div key={tid} className="flex items-center gap-3 rounded bg-black/10 px-3 py-2">
+                      <span className="w-5 h-5 rounded-full border border-slate-700" style={{ background: t.color || '#888' }} />
+                      <span className="font-semibold text-base">{t.name || tid.slice(0, 4)}</span>
+                      <span className="text-xs text-slate-400">{Object.keys(t.members ?? {}).length} Players</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       </main>
     );
   }
+  
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden">
-      <GameMap position={position} teams={teams} bars={bars} game={game} enabled={game.status === "running"} interactive currentTeamId={teamId} />
-
-      <section className="absolute left-2 right-2 top-2 rounded bg-slate-900/80 p-3 text-sm">
-        <div>Status: {game.status}</div>
-        <div>Circle radius: {Math.round(game.circle_radius)}m</div>
-        {geoError ? <div className="text-red-300">GPS: {geoError}</div> : null}
+    <main className="relative h-screen w-screen overflow-hidden" style={{ background: teamBgColor }}>
+      {/* Team name and stats at the top */}
+      <section className="absolute left-0 right-0 top-0 z-10 flex flex-col items-center" style={{ background: teamBgColor }}>
+        <div className="w-full py-6 px-4 text-3xl font-extrabold tracking-wide text-center rounded-b-xl shadow-lg team-header" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.05em' }}>
+          {team.name}
+        </div>
+        {/* Team ranking - collapsible */}
+        <TeamRanking teams={teams} currentTeamId={teamId} showRankingDefault={false} />
       </section>
 
-      <section className="absolute bottom-2 left-2 right-2 rounded bg-slate-900/80 p-3 text-sm">
-        <div className="mb-2">{team.name} • {team.wins}W-{team.losses}L</div>
+      {/* Loss timer overlay */}
+      <LossTimerOverlay ms={lossTimerMs ?? 0} />
 
-        <div className="mb-2 flex gap-2">
-          {battle.availableTeamIds.slice(0, 3).map((id) => (
-            <button key={id} className="rounded bg-indigo-600 px-3 py-2" onClick={() => battle.startBattle(id)}>
-              Start battle vs {teams[id]?.name ?? id.slice(0, 4)}
-            </button>
-          ))}
-        </div>
+      <GameMap position={position} teams={teams} bars={bars} game={game} enabled={game.status === "running"} interactive currentTeamId={teamId} />
 
-        <div className="space-y-1">
-          {myPendingBattles.map(([battleId, b]) => (
-            <div key={battleId} className="rounded border border-slate-700 p-2">
-              <div>Battle: {b.type || "choose type"}</div>
-              <div className="mt-1 text-xs text-slate-300">
-                You: {teamId === b.team_a ? b.outcome_a ?? "-" : b.outcome_b ?? "-"} • Opponent: {teamId === b.team_a ? b.outcome_b ?? "-" : b.outcome_a ?? "-"}
-              </div>
-              {b.status === "disputed" ? <div className="mt-1 text-xs text-amber-300">Conflict: both teams reported the same outcome. Re-submit your result.</div> : null}
-              <div className="mt-1 flex flex-wrap gap-1">
-                <button className="rounded bg-slate-700 px-2" onClick={() => battle.setBattleType(battleId, "chug")}>Chug</button>
-                <button className="rounded bg-slate-700 px-2" onClick={() => battle.setBattleType(battleId, "challenge")}>Challenge</button>
-                <button className="rounded bg-emerald-700 px-2" onClick={() => battle.submitOutcome(battleId, "win")}>I won</button>
-                <button className="rounded bg-rose-700 px-2" onClick={() => battle.submitOutcome(battleId, "lose")}>I lost</button>
-              </div>
+      {/* Challenge team buttons - now centered on screen with scale-in animation (client-only) */}
+      {game.status === "running" && battle.availableTeamIds.length > 0 && (
+        <ChallengeButtonsClient
+          availableTeamIds={battle.availableTeamIds}
+          teams={teams}
+          onChallenge={battle.startBattle}
+        />
+      )}
+
+      {/* Actions section at the bottom */}
+      <section className="absolute bottom-0 left-0 right-0 flex flex-col gap-3 rounded p-3 text-sm" style={{ background: teamBgColor }}>
+
+        {/* Challenge outcome bar for pending/submitted battles - centered on screen */}
+        {game.status === "running" && myPendingBattles.length > 0 && (
+          <div className="fixed inset-0 flex items-center justify-center z-30 pointer-events-none">
+            <div className="rounded bg-slate-800/80 p-3 flex flex-col gap-2 w-full max-w-xl px-4 pointer-events-auto shadow-2xl border border-slate-700">
+              {myPendingBattles.map(([battleId, b]) => {
+                const opponentId = b.team_a === teamId ? b.team_b : b.team_a;
+                const opponentName = teams[opponentId]?.name ?? opponentId.slice(0, 4);
+                const alreadySubmitted = (b.team_a === teamId ? b.outcome_a : b.outcome_b) ?? null;
+                return (
+                  <div key={battleId} className="flex flex-col gap-2">
+                    <div className="font-bold text-base text-center">Chug Challenge vs {opponentName}</div>
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        className={`rounded px-4 py-2 font-bold ${alreadySubmitted === "win" ? "bg-emerald-700" : "bg-slate-700"}`}
+                        style={{ color: 'var(--color-text-primary)' }}
+                        disabled={!!alreadySubmitted}
+                        onClick={() => battle.submitOutcome(battleId, "win")}
+                      >
+                        I won
+                      </button>
+                      <button
+                        className={`rounded px-4 py-2 font-bold ${alreadySubmitted === "lose" ? "bg-slate-700" : "bg-slate-700"}`}
+                        style={{ color: 'var(--color-text-primary)' }}
+                        disabled={!!alreadySubmitted}
+                        onClick={() => battle.submitOutcome(battleId, "lose")}
+                      >
+                        I lost
+                      </button>
+                    </div>
+                    {alreadySubmitted ? (
+                      <div className="text-xs text-center text-slate-300">Waiting for opponent to submit outcome…</div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
 
-        <div className="mt-3 rounded border border-slate-700 p-2">
-          <div className="mb-1 text-xs text-slate-300">Nearby active bars</div>
-          {nearbyActiveBars.length === 0 ? (
-            <div className="text-xs text-slate-400">No active bar within range right now.</div>
-          ) : (
+        {/* Nearby active bars - only show if player is in radius of 1+ bars */}
+        {game.status === "running" && nearbyActiveBars.length > 0 && (
+          <div className="rounded" style={{ background: teamBgColor }}>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs text-slate-300">Nearby unsearched bars</span>
+              <span className="text-xs text-slate-400 text-right">Currently searched: {Object.values(bars).filter(bar => bar.active == false).length} / {Object.keys(bars).length} bars</span>
+            </div>
             <div className="space-y-1">
               {nearbyActiveBars.map(({ id, bar, distance }) => (
-                <div key={id} className="flex items-center justify-between rounded bg-slate-900 px-2 py-1">
+                <div
+                  key={id}
+                  className="flex items-center justify-between rounded px-2 py-1"
+                  style={{ background: bar.active === false ? '#000' : teamBgColor }}
+                >
                   <span className="text-xs">{bar.name} ({Math.round(distance)}m)</span>
-                  <button className="rounded bg-amber-700 px-2 text-xs" onClick={() => void markBarInactive(id)}>
-                    Mark inactive
-                  </button>
+                  {(() => {
+                    // Find teams with members near the bar
+                    const barObj = bars[id];
+                    const nearbyTeams = Object.entries(teams).filter(([tid, t]) => {
+                      const memberLocs = t.memberLocations ?? {};
+                      return Object.values(memberLocs).some(loc => {
+                        const dist = distanceMeters(loc.lat, loc.lng, barObj.lat, barObj.lng);
+                        return dist <= barObj.radius;
+                      });
+                    });
+                    const multipleTeamsNear = nearbyTeams.length > 1;
+                    return (
+                      <button
+                        className="rounded bg-amber-700 px-4 py-3 text-xs"
+                        style={{ color: 'var(--color-text-primary)' }}
+                        onClick={() => void (!multipleTeamsNear && markBarInactive(id))}
+                        disabled={multipleTeamsNear}
+                      >
+                        {multipleTeamsNear ? 'Must challenge' : 'Mark searched (chug!)'}
+                      </button>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
-          )}
-          {barMessage ? <div className="mt-1 text-xs text-slate-300">{barMessage}</div> : null}
-        </div>
+            {barMessage && !barMessage.includes('Multiple teams are near') ? (
+              <div className="mt-1 text-xs text-slate-300">{barMessage}</div>
+            ) : null}
+          </div>
+        )}
 
-        <div className="mt-3 flex gap-2">
-          <input
-            value={codeInput}
-            onChange={(event) => setCodeInput(event.target.value)}
-            className="flex-1 rounded bg-slate-800 px-2 py-2"
-            placeholder="Enter secret code"
-            disabled={game.status === "finished"}
-          />
-          <button className="rounded bg-green-700 px-3" onClick={submitCode} disabled={game.status === "finished"}>
-            Submit
-          </button>
-        </div>
+        {/* Found the chickens button and secret code input */}
+        {game.status === "running" && (
+          <div className="flex flex-col gap-2 items-center">
+            {!showSecretCodeInput && (
+              <button
+                className="w-full rounded font-bold px-2 py-5 found-chickens-btn"
+                onClick={() => setShowSecretCodeInput(true)}
+              >
+                Found the chickens!
+              </button>
+            )}
+            {showSecretCodeInput && (
+              <div className="flex gap-2 w-full">
+                <input
+                  value={codeInput}
+                  onChange={(event) => setCodeInput(event.target.value)}
+                  className="flex-1 rounded bg-slate-800 px-2 py-2"
+                  placeholder="Enter secret code"
+                  disabled={game.status !== "running"}
+                />
+                <button className="rounded bg-green-700 px-3" style={{ color: 'var(--color-text-primary)' }} onClick={submitCode} disabled={game.status !== "running"}>
+                  Submit
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {game.status === "finished" ? (
@@ -448,7 +689,7 @@ export default function HomePage() {
               <p className="mt-1 text-center text-lg">
                 Winner: {winnerTeam?.name ?? (game.winner_team_id ? `Team-${game.winner_team_id.slice(0, 4)}` : "Unknown team")}
               </p>
-              {winnerTeam ? <p className="mt-1 text-center text-sm text-slate-300">{winnerTeam.wins}W-{winnerTeam.losses}L</p> : null}
+              {winnerTeam ? <p className="mt-1 text-center text-sm text-slate-300">{winnerTeam.wins} Wins - {winnerTeam.losses} Losses</p> : null}
 
               <div className="mt-5">
                 <div className="mb-2 text-sm font-semibold">Winning team members</div>
@@ -481,7 +722,7 @@ export default function HomePage() {
                         <tr key={row.uid} className="border-t border-slate-800/70">
                           <td className="px-2 py-1.5">{row.playerName}</td>
                           <td className="px-2 py-1.5 text-slate-300">{row.teamName}</td>
-                          <td className="px-2 py-1.5 font-medium">{row.wins}W-{row.losses}L</td>
+                          <td className="px-2 py-1.5 font-medium">{row.wins} Wins - {row.losses} Losses</td>
                         </tr>
                       ))}
                     </tbody>

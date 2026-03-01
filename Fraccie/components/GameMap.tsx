@@ -91,8 +91,8 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
       label.style.padding = "2px 6px";
       label.style.marginBottom = "4px";
       label.style.borderRadius = "999px";
-      label.style.background = "rgba(15,23,42,0.85)";
-      label.style.color = "#f8fafc";
+      label.style.background = "var(--color-slate)";
+      label.style.color = "var(--color-text-primary)";
       label.style.whiteSpace = "nowrap";
       root.appendChild(label);
     }
@@ -102,7 +102,7 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
     dot.style.width = "16px";
     dot.style.height = "16px";
     dot.style.borderRadius = "999px";
-    dot.style.border = "1px solid #ffffff";
+    dot.style.border = `1px solid ${getComputedStyle(document.documentElement).getPropertyValue('--color-text-primary')}`;
     root.appendChild(dot);
 
     return root;
@@ -134,8 +134,8 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         label.style.padding = "2px 6px";
         label.style.marginBottom = "4px";
         label.style.borderRadius = "999px";
-        label.style.background = "rgba(15,23,42,0.85)";
-        label.style.color = "#f8fafc";
+        label.style.background = "var(--color-slate)";
+        label.style.color = "var(--color-text-primary)";
         label.style.whiteSpace = "nowrap";
         root.insertBefore(label, root.firstChild);
       }
@@ -147,11 +147,19 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    // Groningen bounding box (just outside grachten)
+    const groningenBounds: [mapboxgl.LngLatLike, mapboxgl.LngLatLike] = [
+      [6.550, 53.209], // SW (lng, lat)
+      [6.578, 53.223]  // NE (lng, lat)
+    ];
     mapRef.current = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/dark-v11",
-      center: [0, 0],
+      center: [6.575, 53.215],
       zoom: MAP_DEFAULT_ZOOM,
+      maxZoom: 20,
+      minZoom: 12,
+      maxBounds: groningenBounds,
       attributionControl: false,
       logoPosition: "top-right",
       dragPan: interactive,
@@ -183,13 +191,21 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         );
       }
       map.addSource("game-circle-gradient", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      const getVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const colorPrimary = getVar('--color-primary');
+      const colorError = getVar('--color-error');
+      const colorSlate = getVar('--color-slate');
+      const colorSuccess = getVar('--color-success');
+      const colorWarning = getVar('--color-warning');
+      const colorAmber = getVar('--color-amber');
       map.addLayer({
         id: "game-circle-fill",
         type: "fill",
         source: "game-circle-gradient",
         filter: ["==", ["get", "kind"], "band"],
         paint: {
-          "fill-color": "#38bdf8",
+          // Use feature color if present, else default to gradient color
+          "fill-color": ["coalesce", ["get", "color"], colorPrimary],
           "fill-opacity": ["get", "opacity"]
         }
       });
@@ -199,7 +215,7 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         source: "game-circle-gradient",
         filter: ["==", ["get", "kind"], "edge"],
         paint: {
-          "line-color": "#7dd3fc",
+          "line-color": colorPrimary,
           "line-width": 0,
           "line-opacity": 1
         }
@@ -214,10 +230,10 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
           "circle-color": [
             "case",
             ["==", ["get", "active"], false],
-            "#ef4444",
+            colorError,
             ["==", ["get", "inRadius"], false],
-            "#94a3b8",
-            "#22c55e"
+            "#000",
+            colorSuccess
           ],
           "circle-opacity": [
             "case",
@@ -231,10 +247,10 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
           "circle-stroke-color": [
             "case",
             ["==", ["get", "active"], false],
-            "#fca5a5",
+            colorWarning,
             ["==", ["get", "inRadius"], false],
-            "#cbd5e1",
-            "#86efac"
+            "#222",
+            colorSuccess
           ],
           "circle-stroke-width": 2
         }
@@ -258,7 +274,7 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
 
     const toBool = (value: unknown) => value === true || value === "true";
 
-    const onBarClick = (event: mapboxgl.MapLayerMouseEvent) => {
+    const onBarClick = (event: any) => {
       const feature = event.features?.[0];
       if (!feature || feature.geometry.type !== "Point") return;
 
@@ -266,15 +282,27 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
       const isActive = toBool(feature.properties?.active);
       const inRadius = toBool(feature.properties?.inRadius);
       const coordinates = feature.geometry.coordinates as [number, number];
-      const status = !isActive ? "Inactive (visited)" : inRadius ? "Active" : "Out of radius";
+      let status: string;
+      if (!isActive) {
+        // Try to get team name from clearedBy property
+        const barId = feature.id;
+        let teamName = "Unknown";
+        if (barId && bars[barId] && bars[barId].clearedBy) {
+          const clearedTeamId = bars[barId].clearedBy;
+          teamName = teams[clearedTeamId]?.name || `Team-${clearedTeamId?.slice(0, 4)}`;
+        }
+        status = `Searched by ${teamName}`;
+      } else {
+        status = inRadius ? "Not searched" : "Out of radius";
+      }
 
       barPopupRef.current?.remove();
       barPopupRef.current = new mapboxgl.Popup({ closeButton: false, closeOnClick: true })
         .setLngLat(coordinates)
         .setHTML(
-          `<div style="color:#0f172a;font-size:14px;line-height:1.35;font-weight:600;min-width:140px;">
+          `<div style="color:var(--color-background);font-size:14px;line-height:1.35;font-weight:600;min-width:140px;">
             <div style="font-size:16px;margin-bottom:2px;">${barName}</div>
-            <div style="color:#334155;">${status}</div>
+            <div style="color:var(--color-slate);">${status}</div>
           </div>`
         )
         .addTo(map);
@@ -377,7 +405,8 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         type: "Feature",
         properties: {
           kind: "band",
-          opacity
+          opacity,
+          color: undefined // use default gradient color
         },
         geometry: {
           type: "Polygon",
@@ -385,6 +414,23 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         }
       };
     });
+
+    // Add extra donut band from circle_radius to circle_radius + 2km
+    const donutOuterRadius = game.circle_radius + 2000;
+    const donutOuterRing = buildCircleCoordinates(game.circle_center_lat, game.circle_center_lng, donutOuterRadius);
+    const donutInnerRing = buildCircleCoordinates(game.circle_center_lat, game.circle_center_lng, game.circle_radius).reverse();
+    const donutFeature = {
+      type: "Feature",
+      properties: {
+        kind: "band",
+        opacity: 0.8,
+        color: "#000"
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [donutOuterRing, donutInnerRing]
+      }
+    };
 
     const edgeFeature = {
       type: "Feature",
@@ -399,7 +445,7 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
 
     gradientSource?.setData({
       type: "FeatureCollection",
-      features: [...gradientFeatures, edgeFeature] as never[]
+      features: [...gradientFeatures, donutFeature, edgeFeature] as never[]
     });
   }, [bars, game, mapLoaded, zoom, position]);
 
@@ -424,8 +470,8 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         activeIds.add(fallbackId);
         const markerColor = currentTeamId
           ? teamId === currentTeamId
-            ? "#22c55e"
-            : "#ef4444"
+            ? getComputedStyle(document.documentElement).getPropertyValue('--color-success')
+            : getComputedStyle(document.documentElement).getPropertyValue('--color-error')
           : isValidColor(team.color)
             ? team.color
             : teamColorFromId(teamId);
@@ -449,19 +495,15 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
         const markerId = `${teamId}:${memberId}`;
         activeIds.add(markerId);
         const isTeammate = currentTeamId ? teamId === currentTeamId : false;
-        const markerColor = currentTeamId
-          ? isTeammate
-            ? "#22c55e"
-            : "#ef4444"
-          : isValidColor(team.color)
-            ? team.color
-            : teamColorFromId(teamId);
+        const markerColor = isValidColor(team.color)
+          ? team.color
+          : teamColorFromId(teamId);
         const teamName = typeof team.name === "string" && team.name.trim() ? team.name : `Team-${teamId.slice(0, 4)}`;
         const memberName = team.memberProfiles?.[memberId]?.name ?? `Player ${memberId.slice(0, 4)}`;
         const popupHtml = isTeammate
-          ? `<div style="color:#0f172a;font-size:14px;line-height:1.35;font-weight:600;min-width:120px;">${memberName}</div>`
+          ? `<div style="color:var(--color-background);font-size:14px;line-height:1.35;font-weight:600;min-width:120px;">${memberName}</div>`
           : enemyVisibilityEnabled
-            ? `<div style="color:#0f172a;font-size:14px;line-height:1.35;min-width:140px;"><div style="font-weight:700;">${teamName}</div><div style="font-weight:500;color:#334155;">${memberName}</div></div>`
+            ? `<div style="color:var(--color-background);font-size:14px;line-height:1.35;min-width:140px;"><div style="font-weight:700;">${teamName}</div><div style="font-weight:500;color:var(--color-slate);">${memberName}</div></div>`
             : null;
 
         const existing = markersRef.current[markerId];

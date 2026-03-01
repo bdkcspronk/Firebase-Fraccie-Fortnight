@@ -7,13 +7,13 @@ export const WORDS = [
     "OPERA", "PRIDE", "QUILL", "ROAST", "SHEEP", "THORN", "UNITY", "VIXEN", "WOOZY", "XENIA",
     "YOUTH", "ZAPPY", "ANGEL", "BRAVE", "CRISP", "DREAM", "EVERY", "FAITH", "GHOST", "HEART",
     "IMAGE", "JUDGE", "KNEEL", "LUSHY", "MOUSE", "NOVEL", "OFFER", "PIXEL", "QUIRK", "REACH",
-    "SHINE", "TRUST", "UNION", "VAPOR", "WOMAN", "YIELD", "ZONAL", "ALERT", "BERRY",
+    "SHINE", "TRUST", "UNION", "VAPOR", "WOMAN", "YIELD", "ZONAL", "ALERT", "BERRY", "ZESTY",
     "CLASS", "DRIVE", "ELITE", "FABLE", "GRAND", "HOUSE", "INERT", "JOLTS", "KNACK", "LABEL",
     "MAGIC", "NOBLY", "ORDER", "PEACE", "QUOTA", "RANGE", "SCALE", "TOKEN", "UNITE", "VAULT",
-    "WHOLE", "XERIC", "YEARN", "ZESTY"
+    "WHOLE", "XERIC", "YEARN", "ZIPPY", "AMBER", "BLISS", "CRANE", "DUSK", "ENJOY"
 ]
 
 export function getRandomWord(): string {
   const word = WORDS[Math.floor(Math.random() * WORDS.length)];
-  return word.toUpperCase();
+  return word;
 }
