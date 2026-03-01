@@ -15,7 +15,23 @@ import { Bar, Battle, Team } from "@/lib/types";
 import logoImage from "./images/logo_300_300.png";
 
 export default function HomePage() {
-  const { uid, teamId, team, loading, isAdmin, authError, createTeam, joinTeamByCode, teamActionPending, teamActionError, playerName, updatePlayerName, updateTeamName } = useAuthTeam();
+      // Listen for admin broadcast to delete all teams
+      useEffect(() => {
+        const broadcastRef = ref(db, 'broadcast/teamsDeleted');
+        const handler = (snapshot: any) => {
+          if (snapshot.exists()) {
+            localStorage.removeItem('team_id');
+            window.location.reload();
+          }
+        };
+        import('firebase/database').then(({ onValue, off }) => {
+          onValue(broadcastRef, handler);
+          return () => off(broadcastRef, 'value', handler);
+        });
+      }, []);
+    // Location permission state
+    const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
+  const { uid, teamId, team, loading, isAdmin, authError, joinTeamByName, teamActionPending, teamActionError, playerName, updatePlayerName, updateTeamName } = useAuthTeam();
   const game = useGameState();
   const teams = useRealtimeCollection<Team>("teams", Boolean(uid));
   const bars = useRealtimeCollection<Bar>("bars", Boolean(uid));
@@ -51,7 +67,7 @@ export default function HomePage() {
 
   const teamPlayers = useMemo(() => {
     const now = Date.now();
-    return Object.entries(team?.memberProfiles ?? {}).map(([memberUid, profile]) => ({
+    return Object.entries((team && typeof team === "object" && "memberProfiles" in team ? team.memberProfiles : {}) ?? {}).map(([memberUid, profile]) => ({
       uid: memberUid,
       name: profile.name,
       active: now - profile.lastSeen <= 60_000
@@ -181,6 +197,18 @@ export default function HomePage() {
 
   if (loading) return <main className="p-4">Loading...</main>;
 
+  // Location permission banner
+  if (locationPermissionDenied) {
+    return (
+      <main className="grid h-screen place-items-center p-6 text-center">
+        <div className="w-full max-w-xl rounded bg-rose-900 p-4">
+          <h1 className="mb-2 text-xl">Location Required</h1>
+          <p className="text-slate-100">This game needs your location to work. Please enable location permissions in your browser settings and reload the page.</p>
+        </div>
+      </main>
+    );
+  }
+
   if (authError) {
     return (
       <main className="grid h-screen place-items-center p-6 text-center">
@@ -226,14 +254,25 @@ export default function HomePage() {
 
     const joinGameNow = async () => {
       setJoinGamePending(true);
-      try {
-        setIsReadyForGame(true);
-        localStorage.setItem(GAME_READY_STORAGE_KEY, "true");
-      } catch {
-        setIsReadyForGame(false);
-      } finally {
+      // Prompt for location permission
+      if (!navigator.geolocation) {
+        setLocationPermissionDenied(true);
         setJoinGamePending(false);
+        return;
       }
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          setLocationPermissionDenied(false);
+          setIsReadyForGame(true);
+          localStorage.setItem(GAME_READY_STORAGE_KEY, "true");
+          setJoinGamePending(false);
+        },
+        (err) => {
+          if (err.code === 1) setLocationPermissionDenied(true); // PERMISSION_DENIED
+          setIsReadyForGame(false);
+          setJoinGamePending(false);
+        }
+      );
     };
 
     return (
@@ -245,22 +284,7 @@ export default function HomePage() {
           <h1 className="mb-2 text-xl">Waiting for game start…</h1>
           <p className="mb-1 text-slate-300">Current team: {team.name}</p>
           <div className="mb-4 flex items-center justify-center gap-2 text-slate-300">
-            <p>
-              Share code: <span className="font-semibold tracking-wide">{team.joinCode ?? "No code yet"}</span>
-            </p>
-            <button
-              className="rounded bg-slate-700 px-2 py-1 text-xs"
-              onClick={() => void copyTeamCode()}
-              disabled={!team.joinCode}
-            >
-              {copiedTeamCode ? "Copied" : "Copy"}
-            </button>
-          </div>
-
-          <div className="mb-3 flex flex-wrap justify-center gap-2">
-            <button className="rounded bg-indigo-600 px-3 py-2" onClick={() => void createTeam()} disabled={teamActionPending}>
-              Create new team code
-            </button>
+          {/* Share code removed, code is always equal to team name */}
           </div>
 
           <div className="mx-auto flex max-w-sm gap-2">
@@ -268,37 +292,18 @@ export default function HomePage() {
               value={joinCodeInput}
               onChange={(event) => setJoinCodeInput(event.target.value.toUpperCase())}
               className="flex-1 rounded bg-slate-800 px-2 py-2"
-              placeholder="Enter team code"
+              placeholder="Enter team name"
               maxLength={6}
               disabled={teamActionPending}
             />
             <button
               className="rounded bg-emerald-700 px-3"
-              onClick={() => void joinTeamByCode(joinCodeInput)}
+              onClick={() => void joinTeamByName(joinCodeInput)}
               disabled={teamActionPending}
             >
               Join
             </button>
-          </div>
-
-          {teamActionError ? <p className="mt-3 text-sm text-red-300">{teamActionError}</p> : null}
-
-          <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
-            <p className="mb-2 text-sm font-semibold">Team name</p>
-            <div className="flex gap-2">
-              <input
-                value={teamNameInput}
-                onChange={(event) => setTeamNameInput(event.target.value)}
-                className="flex-1 rounded bg-slate-800 px-2 py-2"
-                placeholder="Enter team name"
-                maxLength={32}
-                disabled={teamNamePending}
-              />
-              <button className="rounded bg-slate-700 px-3" onClick={() => void saveTeamName()} disabled={teamNamePending}>
-                Save
-              </button>
-            </div>
-            {teamNameError ? <p className="mt-2 text-xs text-red-300">{teamNameError}</p> : null}
+            {teamActionError ? <p className="mt-3 text-sm text-red-300">{teamActionError}</p> : null}
           </div>
 
           <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
@@ -320,7 +325,25 @@ export default function HomePage() {
           </div>
 
           <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
-            <p className="mb-2 text-sm font-semibold">Team players</p>
+            <p className="mb-2 text-sm font-semibold">Team name</p>
+            <div className="flex gap-2">
+              <input
+                value={teamNameInput}
+                onChange={(event) => setTeamNameInput(event.target.value)}
+                className="flex-1 rounded bg-slate-800 px-2 py-2"
+                placeholder="Enter team name"
+                maxLength={32}
+                disabled={teamNamePending}
+              />
+              <button className="rounded bg-slate-700 px-3" onClick={() => void saveTeamName()} disabled={teamNamePending}>
+                Save
+              </button>
+            </div>
+            {teamNameError ? <p className="mt-2 text-xs text-red-300">{teamNameError}</p> : null}
+          </div>
+
+          <div className="mt-4 rounded bg-slate-800/60 p-3 text-left">
+            <p className="mb-2 text-sm font-semibold">Team players ({team.name})</p>
             <ul className="space-y-1 text-sm">
               {teamPlayers.map((member) => (
                 <li key={member.uid} className="flex items-center justify-between rounded bg-slate-900 px-2 py-1">
@@ -347,7 +370,7 @@ export default function HomePage() {
 
   return (
     <main className="relative h-screen w-screen overflow-hidden">
-      <GameMap position={position} teams={teams} bars={bars} game={game} enabled={game.status === "running"} currentTeamId={teamId} />
+      <GameMap position={position} teams={teams} bars={bars} game={game} enabled={game.status === "running"} interactive currentTeamId={teamId} />
 
       <section className="absolute left-2 right-2 top-2 rounded bg-slate-900/80 p-3 text-sm">
         <div>Status: {game.status}</div>

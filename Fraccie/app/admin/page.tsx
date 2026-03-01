@@ -558,16 +558,16 @@ export default function AdminPage() {
 
       <section className="rounded border border-slate-700 p-3">
         <h2 className="mb-2 font-semibold">Live Map</h2>
-        <div className="h-96 overflow-hidden rounded border border-slate-800">
-          <GameMap
-            position={{ lat: game.circle_center_lat, lng: game.circle_center_lng }}
-            teams={teams}
-            bars={bars}
-            game={game}
-            enabled
-            interactive
-          />
-        </div>
+          <div className="h-[70vh] overflow-hidden rounded border border-slate-800">
+            <GameMap
+              position={{ lat: game.circle_center_lat, lng: game.circle_center_lng }}
+              teams={teams}
+              bars={bars}
+              game={game}
+              enabled
+              interactive
+            />
+          </div>
       </section>
     </main>
   );

@@ -5,11 +5,12 @@ import { get, onValue, push, ref, runTransaction, set, update } from "firebase/d
 import { auth, db, ensureAnonymousAuth } from "@/lib/firebase";
 import { PLAYER_NAME_STORAGE_KEY, TEAM_ID_STORAGE_KEY } from "@/lib/constants";
 import { Team } from "@/lib/types";
+import { getRandomWord } from "@/lib/words";
 
 const randomColor = (): string => `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0")}`;
 
-const teamFactory = (name: string, uid: string, playerName: string, joinCode?: string): Team => {
-  const baseTeam: Team = {
+const teamFactory = (name: string, uid: string, playerName: string): Team => {
+  return {
     name,
     color: randomColor(),
     lat: 0,
@@ -27,51 +28,7 @@ const teamFactory = (name: string, uid: string, playerName: string, joinCode?: s
       }
     }
   };
-
-  if (joinCode) {
-    baseTeam.joinCode = joinCode;
-  }
-
-  return baseTeam;
 };
-
-const randomJoinCode = (): string => {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let index = 0; index < 6; index += 1) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
-};
-
-async function generateUniqueJoinCode(): Promise<string> {
-  for (let attempts = 0; attempts < 10; attempts += 1) {
-    const code = randomJoinCode();
-    const codeSnap = await get(ref(db, `teamCodes/${code}`));
-    if (!codeSnap.exists()) return code;
-  }
-  throw new Error("Could not generate a unique join code. Please try again.");
-}
-
-async function ensureTeamJoinCode(teamId: string) {
-  const teamSnap = await get(ref(db, `teams/${teamId}`));
-  const team = teamSnap.val() as Team | null;
-  if (!team) return;
-
-  if (team.joinCode) {
-    await set(ref(db, `teamCodes/${team.joinCode}`), teamId);
-    return;
-  }
-
-  const code = await generateUniqueJoinCode();
-  const joinCodeRef = ref(db, `teams/${teamId}/joinCode`);
-  const tx = await runTransaction(joinCodeRef, (current) => current ?? code);
-
-  if (!tx.committed) return;
-
-  const persistedCode = String(tx.snapshot.val());
-  await set(ref(db, `teamCodes/${persistedCode}`), teamId);
-}
 
 async function ensurePersonalTeam(uid: string) {
   const fallbackName = `Player-${uid.slice(0, 4)}`;
@@ -79,7 +36,8 @@ async function ensurePersonalTeam(uid: string) {
   const personalSnap = await get(personalRef);
   const storedPlayerName = localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.trim() || fallbackName;
   if (!personalSnap.exists()) {
-    await set(personalRef, teamFactory(`Team-${uid.slice(0, 6)}`, uid, storedPlayerName));
+    const randomName = getRandomWord();
+    await set(personalRef, teamFactory(randomName, uid, storedPlayerName));
   } else {
     await set(ref(db, `teams/${uid}/members/${uid}`), true);
     await set(ref(db, `teams/${uid}/memberProfiles/${uid}`), {
@@ -101,10 +59,6 @@ async function cleanupTeamIfEmpty(teamId: string) {
   const updates: Record<string, null> = {
     [`teams/${teamId}`]: null
   };
-
-  if (team.joinCode) {
-    updates[`teamCodes/${team.joinCode}`] = null;
-  }
 
   await update(ref(db), updates);
 }
@@ -166,7 +120,6 @@ export function useAuthTeam(options?: UseAuthTeamOptions) {
           await ensurePersonalTeam(nextUid);
         }
 
-        await ensureTeamJoinCode(resolvedTeamId);
         await set(ref(db, `teams/${resolvedTeamId}/memberProfiles/${nextUid}`), {
           name: storedPlayerName,
           lastSeen: Date.now()
@@ -245,51 +198,15 @@ export function useAuthTeam(options?: UseAuthTeamOptions) {
       if (!createdRef.key) throw new Error("Could not create a team id.");
 
       const createdTeamId = createdRef.key;
-      const joinCode = await generateUniqueJoinCode();
+      const randomName = getRandomWord();
 
-      await set(createdRef, teamFactory(`Team-${createdTeamId.slice(0, 6)}`, uid, playerName || `Player-${uid.slice(0, 4)}`, joinCode));
-      await set(ref(db, `teamCodes/${joinCode}`), createdTeamId);
+      await set(createdRef, teamFactory(randomName, uid, playerName || `Player-${uid.slice(0, 4)}`));
 
       localStorage.setItem(TEAM_ID_STORAGE_KEY, createdTeamId);
       setTeamId(createdTeamId);
       setLoading(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create team.";
-      setTeamActionError(message);
-    } finally {
-      setTeamActionPending(false);
-    }
-  };
-
-  const joinTeamByCode = async (rawCode: string) => {
-    if (!uid) return;
-
-    const code = rawCode.trim().toUpperCase();
-    if (!code) {
-      setTeamActionError("Enter a team code.");
-      return;
-    }
-
-    setTeamActionPending(true);
-    setTeamActionError(null);
-
-    try {
-      const codeSnap = await get(ref(db, `teamCodes/${code}`));
-      if (!codeSnap.exists()) throw new Error("Team code not found.");
-
-      const targetTeamId = String(codeSnap.val());
-      await set(ref(db, `teams/${targetTeamId}/members/${uid}`), true);
-      await ensureTeamJoinCode(targetTeamId);
-      await set(ref(db, `teams/${targetTeamId}/memberProfiles/${uid}`), {
-        name: playerName || `Player-${uid.slice(0, 4)}`,
-        lastSeen: Date.now()
-      });
-
-      localStorage.setItem(TEAM_ID_STORAGE_KEY, targetTeamId);
-      setTeamId(targetTeamId);
-      setLoading(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to join team.";
       setTeamActionError(message);
     } finally {
       setTeamActionPending(false);
@@ -324,46 +241,12 @@ export function useAuthTeam(options?: UseAuthTeamOptions) {
       if (!createdRef.key) throw new Error("Could not create a team id.");
 
       const createdTeamId = createdRef.key;
-      const joinCode = await generateUniqueJoinCode();
+      const randomName = getRandomWord();
 
-      await set(createdRef, teamFactory(`Team-${createdTeamId.slice(0, 6)}`, uid, playerName || `Player-${uid.slice(0, 4)}`, joinCode));
-      await set(ref(db, `teamCodes/${joinCode}`), createdTeamId);
+      await set(createdRef, teamFactory(randomName, uid, playerName || `Player-${uid.slice(0, 4)}`));
       await switchTeam(createdTeamId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create team.";
-      setTeamActionError(message);
-    } finally {
-      setTeamActionPending(false);
-    }
-  };
-
-  const joinTeamByCodeWithCleanup = async (rawCode: string) => {
-    if (!uid) return;
-
-    const code = rawCode.trim().toUpperCase();
-    if (!code) {
-      setTeamActionError("Enter a team code.");
-      return;
-    }
-
-    setTeamActionPending(true);
-    setTeamActionError(null);
-
-    try {
-      const codeSnap = await get(ref(db, `teamCodes/${code}`));
-      if (!codeSnap.exists()) throw new Error("Team code not found.");
-
-      const targetTeamId = String(codeSnap.val());
-      await set(ref(db, `teams/${targetTeamId}/members/${uid}`), true);
-      await ensureTeamJoinCode(targetTeamId);
-      await set(ref(db, `teams/${targetTeamId}/memberProfiles/${uid}`), {
-        name: playerName || `Player-${uid.slice(0, 4)}`,
-        lastSeen: Date.now()
-      });
-
-      await switchTeam(targetTeamId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to join team.";
       setTeamActionError(message);
     } finally {
       setTeamActionPending(false);
@@ -395,6 +278,55 @@ export function useAuthTeam(options?: UseAuthTeamOptions) {
     });
   };
 
+  // Add joinTeamByName function
+  const joinTeamByName = async (rawName: string) => {
+    if (!uid) return;
+    const name = rawName.trim();
+    if (!name) {
+      setTeamActionError("Enter a team name.");
+      return;
+    }
+    setTeamActionPending(true);
+    setTeamActionError(null);
+    try {
+      // Find team by name
+      const teamsSnap = await get(ref(db, "teams"));
+      const teams = teamsSnap.val() || {};
+      let targetTeamId: string | null = null;
+      for (const [tid, tval] of Object.entries(teams)) {
+        if (typeof tval === "object" && tval !== null && "name" in tval && typeof (tval as any).name === "string" && (tval as any).name === name) {
+          targetTeamId = tid;
+          break;
+        }
+      }
+      if (!targetTeamId) throw new Error("Team not found.");
+
+      // Leave old team
+      const previousTeamId = teamId ?? localStorage.getItem(TEAM_ID_STORAGE_KEY);
+      if (previousTeamId && previousTeamId !== targetTeamId) {
+        await update(ref(db), {
+          [`teams/${previousTeamId}/members/${uid}`]: null,
+          [`teams/${previousTeamId}/memberProfiles/${uid}`]: null
+        });
+        await cleanupTeamIfEmpty(previousTeamId);
+      }
+
+      await set(ref(db, `teams/${targetTeamId}/members/${uid}`), true);
+      await set(ref(db, `teams/${targetTeamId}/memberProfiles/${uid}`), {
+        name: playerName || `Player-${uid.slice(0, 4)}`,
+        lastSeen: Date.now()
+      });
+      localStorage.setItem(TEAM_ID_STORAGE_KEY, targetTeamId);
+      setTeamId(targetTeamId);
+      setLoading(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to join team.";
+      setTeamActionError(message);
+    } finally {
+      setTeamActionPending(false);
+    }
+  };
+
   return useMemo(
     () => ({
       uid,
@@ -407,7 +339,7 @@ export function useAuthTeam(options?: UseAuthTeamOptions) {
       teamActionError,
       playerName,
       createTeam: createTeamWithCleanup,
-      joinTeamByCode: joinTeamByCodeWithCleanup,
+      joinTeamByName,
       updatePlayerName,
       updateTeamName,
       currentAuthUid: auth.currentUser?.uid ?? null

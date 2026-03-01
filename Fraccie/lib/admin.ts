@@ -100,6 +100,8 @@ export const adminDeleteAllTeams = async () => {
   }
 
   await update(ref(db), updates);
+  // Broadcast a message to notify all clients that teams were deleted
+  await update(ref(db), { 'broadcast/teamsDeleted': Date.now() });
 
   return teamCount;
 };

@@ -71,6 +71,7 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Record<string, Marker>>({});
   const barPopupRef = useRef<mapboxgl.Popup | null>(null);
+  const hasInitialCenterRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [zoom, setZoom] = useState(MAP_DEFAULT_ZOOM);
 
@@ -168,6 +169,19 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
       setZoom(map.getZoom());
       setMapLoaded(true);
       map.addControl(new mapboxgl.AttributionControl({ compact: true }), "top-right");
+            if (interactive) {
+        map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "top-right");
+        map.addControl(
+          new mapboxgl.GeolocateControl({
+            positionOptions: { enableHighAccuracy: true },
+            fitBoundsOptions: { maxZoom: 17 },
+            trackUserLocation: false,
+            showAccuracyCircle: true,
+            showUserLocation: true
+          }),
+          "top-right"
+        );
+      }
       map.addSource("game-circle-gradient", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({
         id: "game-circle-fill",
@@ -288,8 +302,18 @@ export function GameMap({ position, teams, bars, game, enabled, interactive = fa
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !position || !enabled) return;
-    map.jumpTo({ center: [position.lng, position.lat] });
-  }, [position, enabled]);
+
+    if (!interactive) {
+      map.jumpTo({ center: [position.lng, position.lat] });
+      return;
+    }
+
+    if (!hasInitialCenterRef.current) {
+      map.jumpTo({ center: [position.lng, position.lat], zoom: Math.max(map.getZoom(), 15) });
+      hasInitialCenterRef.current = true;
+    }
+  }, [position, enabled, interactive]);
+
 
   useEffect(() => {
     const map = mapRef.current;
