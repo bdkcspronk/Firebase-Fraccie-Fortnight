@@ -13,7 +13,7 @@ import { GAME_READY_STORAGE_KEY } from "@/lib/constants";
 import { db } from "@/lib/firebase";
 import { distanceMeters } from "@/lib/geo";
 import { Bar, Battle, Team } from "@/lib/types";
-import logoImage from "./images/logo_300_300.png";
+import logoImage from "./images/logo_500_500.png";
 import { TeamRanking } from "@/components/TeamRanking";
 import { ChallengeButtonsClient } from "./ChallengeButtonsClient";
 import { useBattleLossTimer } from "@/hooks/useBattleLossTimer";
@@ -396,7 +396,7 @@ export default function HomePage() {
           <div className="p-5 flex flex-col gap-6">
             {/* Logo and game status */}
             <div className="flex flex-col items-center gap-2">
-              <img src={logoImage.src} alt="Fraccie logo" className="h-24 w-24" />
+              <img src={logoImage.src} alt="Fraccie logo" className="h-48 w-48" />
               <h1 className="text-xl">Waiting for The Game to start…</h1>
             </div>
 
@@ -482,7 +482,7 @@ export default function HomePage() {
 
             {/* Join another team section */}
             <section className="rounded bg-black/20 p-4 text-left flex flex-col gap-3">
-              <p className="mb-1 text-sm font-semibold">Join another team</p>
+              <p className="mb-1 text-lg font-semibold">Join another team</p>
               <div className="flex gap-2">
                 <input
                   value={joinCodeInput}
@@ -538,7 +538,6 @@ export default function HomePage() {
     );
   }
   
-
   return (
     <main className="relative h-screen w-screen overflow-hidden" style={{ background: teamBgColor }}>
       {/* Team name and stats at the top */}

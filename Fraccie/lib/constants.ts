@@ -1,7 +1,7 @@
 export const TEAM_ID_STORAGE_KEY = "team_id";
 export const PLAYER_NAME_STORAGE_KEY = "player_name";
 export const GAME_READY_STORAGE_KEY = "game_ready";
-export const LOCATION_WRITE_INTERVAL_MS = 8_000;
+export const LOCATION_WRITE_INTERVAL_MS = 4_000;
 export const LOCATION_MIN_DISTANCE_METERS = 10;
 export const BATTLE_DISTANCE_METERS = 40;
 export const BATTLE_TIMEOUT_MS = 2 * 60_000;
