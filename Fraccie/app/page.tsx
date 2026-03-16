@@ -397,7 +397,7 @@ export default function HomePage() {
             {/* Logo and game status */}
             <div className="flex flex-col items-center gap-2">
               <img src={logoImage.src} alt="Fraccie logo" className="h-24 w-24" />
-              <h1 className="text-xl">Waiting for The Game start…</h1>
+              <h1 className="text-xl">Waiting for The Game to start…</h1>
             </div>
 
             {/* Player section FIRST */}
@@ -451,7 +451,7 @@ export default function HomePage() {
                 </motion.button>
               </div>
               <div className="flex gap-2 items-center mb-2">
-                <span className="text-sm">Team color:</span>
+                <span className="text-sm">Change team color:</span>
                 <div className="flex-1" />
                 <input
                   id="team-color-picker"

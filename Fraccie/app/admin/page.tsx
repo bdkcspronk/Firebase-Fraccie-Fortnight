@@ -419,6 +419,19 @@ export default function AdminPage() {
       <div>Radius: {Math.round(game.circle_radius)}m</div>
       <div>Enemy popup visibility: {game.enemy_visibility ? "On" : "Off"}</div>
 
+      {/* Admin UID display */}
+      <section className="rounded border border-slate-700 bg-slate-900/80 p-3 mb-3">
+        <div className="mb-1 text-slate-400">Your database UID</div>
+        <div className="break-all font-mono tracking-wide text-xs text-slate-200">{uid}</div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500" onClick={() => void copyUid()}>
+            Copy UID
+          </button>
+          {uidCopyMessage && <span className="text-xs text-emerald-300">{uidCopyMessage}</span>}
+        </div>
+      </section>
+
+
       <div className="flex flex-wrap gap-2">
         <button className="rounded bg-green-700 px-3 py-2" onClick={() => adminStartGame()}>Start game</button>
         <button className="rounded bg-amber-700 px-3 py-2" onClick={() => adminEndGame()}>End game</button>

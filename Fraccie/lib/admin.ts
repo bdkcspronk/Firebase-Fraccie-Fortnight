@@ -31,8 +31,8 @@ export const adminSetEnemyVisibility = async (enabled: boolean) =>
 export const adminResetGame = async () => {
   await set(ref(db, "game"), {
     status: "waiting",
-    circle_center_lat: 53.2172985,
-    circle_center_lng: 6.5649106,
+    circle_center_lat: 53.2172313,
+    circle_center_lng: 6.5647853,
     circle_radius: 500,
     enemy_visibility: false,
     secret_code: "CHICKEN",

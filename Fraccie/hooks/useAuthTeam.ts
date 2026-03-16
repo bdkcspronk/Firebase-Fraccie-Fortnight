@@ -49,18 +49,22 @@ async function ensurePersonalTeam(uid: string) {
 }
 
 async function cleanupTeamIfEmpty(teamId: string) {
-  const teamSnap = await get(ref(db, `teams/${teamId}`));
-  const team = teamSnap.val() as Team | null;
-  if (!team) return;
+  try {
+    const teamSnap = await get(ref(db, `teams/${teamId}`));
+    const team = teamSnap.val() as Team | null;
+    if (!team) return;
 
-  const members = Object.keys(team.members ?? {});
-  if (members.length > 0) return;
+    const members = Object.keys(team.members ?? {});
+    if (members.length > 0) return;
 
-  const updates: Record<string, null> = {
-    [`teams/${teamId}`]: null
-  };
+    const updates: Record<string, null> = {
+      [`teams/${teamId}`]: null
+    };
 
-  await update(ref(db), updates);
+    await update(ref(db), updates);
+  } catch {
+    // Team cleanup is best-effort; a permission failure should not block team switching.
+  }
 }
 
 type UseAuthTeamOptions = {
